@@ -27,7 +27,8 @@ log = logging.getLogger('scrapy.proxies')
 
 
 class Mode:
-    RANDOMIZE_PROXY_EVERY_REQUESTS, RANDOMIZE_PROXY_ONCE, SET_CUSTOM_PROXY = range(3)
+    RANDOMIZE_PROXY_EVERY_REQUESTS, RANDOMIZE_PROXY_ONCE, SET_CUSTOM_PROXY = range(
+        3)
 
 
 class RandomProxy(object):
@@ -43,7 +44,8 @@ class RandomProxy(object):
             fin = open(self.proxy_list)
             try:
                 for line in fin.readlines():
-                    parts = re.match('(\w+://)([^:]+?:[^@]+?@)?(.+)', line.strip())
+                    parts = re.match(
+                        '(\w+://)([^:]+?:[^@]+?@)?(.+)', line.strip())
                     if not parts:
                         continue
 
@@ -61,7 +63,8 @@ class RandomProxy(object):
         elif self.mode == Mode.SET_CUSTOM_PROXY:
             custom_proxy = settings.get('CUSTOM_PROXY')
             self.proxies = {}
-            parts = re.match('(\w+://)([^:]+?:[^@]+?@)?(.+)', custom_proxy.strip())
+            parts = re.match(
+                '(\w+://)([^:]+?:[^@]+?@)?(.+)', custom_proxy.strip())
             if not parts:
                 raise ValueError('CUSTOM_PROXY is not well formatted')
 
@@ -93,14 +96,18 @@ class RandomProxy(object):
 
         proxy_user_pass = self.proxies[proxy_address]
 
+        request.meta['proxy'] = proxy_address
+
         if proxy_user_pass:
-            request.meta['proxy'] = proxy_address
-            basic_auth = 'Basic ' + base64.b64encode(proxy_user_pass.encode()).decode()
+            basic_auth = 'Basic ' + \
+                base64.b64encode(proxy_user_pass.encode()).decode()
             request.headers['Proxy-Authorization'] = basic_auth
+
         else:
-            log.debug('Proxy user pass not found')
+            log.debug(
+                'Proxy user pass not found, trying connect without authentication')
         log.debug('Using proxy <%s>, %d proxies left' % (
-                proxy_address, len(self.proxies)))
+            proxy_address, len(self.proxies)))
 
     def process_exception(self, request, exception, spider):
         if 'proxy' not in request.meta:

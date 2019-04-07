@@ -22,6 +22,8 @@ import re
 import random
 import base64
 import logging
+import os
+from urllib import request
 
 log = logging.getLogger('scrapy.proxies')
 
@@ -31,33 +33,28 @@ class Mode:
         3)
 
 
+home = os.environ['MOVIE_CRAWLER_HOME']
+
+
 class RandomProxy(object):
     def __init__(self, settings):
         self.mode = settings.get('PROXY_MODE')
         self.proxy_list = settings.get('PROXY_LIST')
+        self.proxy_list_source = settings.get('PROXY_LIST_SOURCE')
         self.chosen_proxy = ''
+        self.redis_host = settings.get('REDIS_HOST')
 
         if self.mode == Mode.RANDOMIZE_PROXY_EVERY_REQUESTS or self.mode == Mode.RANDOMIZE_PROXY_ONCE:
             if self.proxy_list is None:
                 raise KeyError('PROXY_LIST setting is missing')
             self.proxies = {}
-            fin = open(self.proxy_list)
-            try:
-                for line in fin.readlines():
-                    parts = re.match(
-                        '(\w+://)([^:]+?:[^@]+?@)?(.+)', line.strip())
-                    if not parts:
-                        continue
-
-                    # Cut trailing @
-                    if parts.group(2):
-                        user_pass = parts.group(2)[:-1]
-                    else:
-                        user_pass = ''
-
-                    self.proxies[parts.group(1) + parts.group(3)] = user_pass
-            finally:
-                fin.close()
+            if self.proxy_list_source == 'TXT':
+                self.refresh_proxy_list()
+            elif self.proxy_list_source == 'REDIS':
+                pass
+            else:
+                raise KeyError(
+                    'PROXY_LIST_SOURCE setting is missing or illegal')
             if self.mode == Mode.RANDOMIZE_PROXY_ONCE:
                 self.chosen_proxy = random.choice(list(self.proxies.keys()))
         elif self.mode == Mode.SET_CUSTOM_PROXY:
@@ -104,10 +101,11 @@ class RandomProxy(object):
             request.headers['Proxy-Authorization'] = basic_auth
 
         else:
-            log.debug(
-                'Proxy user pass not found, trying connect without authentication')
-        log.debug('Using proxy <%s>, %d proxies left' % (
-            proxy_address, len(self.proxies)))
+            # log.debug(
+            # 'Proxy user pass not found, trying connect without authentication')
+            pass
+        log.debug('Using proxy <%s>, %d proxies left' %
+                  (proxy_address, len(self.proxies)))
 
     def process_exception(self, request, exception, spider):
         if 'proxy' not in request.meta:
@@ -123,3 +121,43 @@ class RandomProxy(object):
                 self.chosen_proxy = random.choice(list(self.proxies.keys()))
             log.info('Removing failed proxy <%s>, %d proxies left' % (
                 proxy, len(self.proxies)))
+            if len(self.proxies) <= 3:
+                self.refresh_proxy_list()
+
+    def write_to_proxy_list_file(self, proxys):
+
+        with open(os.path.join(home, 'proxys.txt'), 'w') as proxy_file:
+            proxy_file.writelines(proxys)
+
+    def get_proxys_from_internet(self):
+        ''
+        proxys = []
+        url = 'http://www.66ip.cn/nmtq.php?getnum=300&isp=0&anonymoustype=3&start=&ports=&export=&ipaddress=&area=1&proxytype=0&api=66ip'
+        with request.urlopen(url) as body:
+            lines = body.readlines()
+            lines = lines[20:-25]
+            for line in lines:
+                line_f = 'http://' + re.sub(r'[^\d:.]', '', str(line)) + '\n'
+                proxys.append(line_f)
+        self.write_to_proxy_list_file(proxys)
+        return proxys
+
+    def refresh_proxy_list(self):
+        fin = open(self.proxy_list)
+        try:
+            for line in fin.readlines():
+                parts = re.match(
+                    r'(\w+://)([^:]+?:[^@]+?@)?(.+)', line.strip())
+                if not parts:
+                    continue
+
+                # Cut trailing @
+                if parts.group(2):
+                    user_pass = parts.group(2)[:-1]
+                else:
+                    user_pass = ''
+
+                self.proxies[parts.group(
+                    1) + parts.group(3)] = user_pass
+        finally:
+            fin.close()
